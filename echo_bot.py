@@ -64,6 +64,32 @@ def check_answer(user_answer, correct_answer):
     return user_answer == cleaned_correct
 
 
+def get_user_context(update, context):
+    user_id = update.effective_user.id
+    redis_client = context.bot_data['redis_client']
+    user_key = f"user:{user_id}:current_question"
+    quiz_data_path = os.getenv("QUIZ_DATA_PATH", "quiz-json")
+    
+    return user_id, redis_client, user_key, quiz_data_path
+
+
+def get_current_question_data(redis_client, user_key):
+    stored_data = redis_client.get(user_key)
+    return json.loads(stored_data)
+
+
+def load_and_send_question(update, redis_client, user_key, quiz_data_path):
+    question, answer = get_random_question(quiz_data_path)
+    
+    question_data = {
+        "question": question,
+        "answer": answer
+    }
+    
+    redis_client.set(user_key, json.dumps(question_data, ensure_ascii=False))
+    update.message.reply_text(f"❓ {question}")
+
+
 def start(update, context):
     reply_markup = create_keyboard()
     welcome_message = (
@@ -82,31 +108,16 @@ def start(update, context):
 
 
 def handle_new_question_request(update, context):
-    user_id = update.effective_user.id
-    redis_client = context.bot_data['redis_client']
-    quiz_data_path = os.getenv("QUIZ_DATA_PATH", "quiz-json")
+    user_id, redis_client, user_key, quiz_data_path = get_user_context(update, context)
     
-    question, answer = get_random_question(quiz_data_path)
-    
-    question_data = {
-        "question": question,
-        "answer": answer
-    }
-    
-    user_key = f"user:{user_id}:current_question"
-    redis_client.set(user_key, json.dumps(question_data, ensure_ascii=False))
-    
-    update.message.reply_text(f"❓ {question}")
+    load_and_send_question(update, redis_client, user_key, quiz_data_path)
     return States.ANSWERING
 
 
 def handle_solution_attempt(update, context):
-    user_id = update.effective_user.id
-    redis_client = context.bot_data['redis_client']
-    user_key = f"user:{user_id}:current_question"
+    user_id, redis_client, user_key, quiz_data_path = get_user_context(update, context)
     
-    stored_data = redis_client.get(user_key)
-    question_data = json.loads(stored_data)
+    question_data = get_current_question_data(redis_client, user_key)
     correct_answer = question_data['answer']
     user_answer = update.message.text
     
@@ -120,19 +131,16 @@ def handle_solution_attempt(update, context):
 
 
 def handle_give_up(update, context):
-    user_id = update.effective_user.id
-    redis_client = context.bot_data['redis_client']
-    user_key = f"user:{user_id}:current_question"
+    user_id, redis_client, user_key, quiz_data_path = get_user_context(update, context)
     
-    stored_data = redis_client.get(user_key)
-    question_data = json.loads(stored_data)
+    question_data = get_current_question_data(redis_client, user_key)
     answer = question_data['answer']
     
     clean_answer_text = clean_answer(answer)
-    
     update.message.reply_text(f"✅ Правильный ответ: {clean_answer_text}")
-    redis_client.delete(user_key)
-    return States.CHOOSING
+    
+    load_and_send_question(update, redis_client, user_key, quiz_data_path)
+    return States.ANSWERING
 
 
 def handle_score(update, context):
