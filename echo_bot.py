@@ -2,16 +2,29 @@ import os
 import json
 import random
 import redis
+from enum import Enum
 from pathlib import Path
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import (
+    Updater, 
+    CommandHandler, 
+    MessageHandler, 
+    Filters, 
+    CallbackContext,
+    ConversationHandler
+)
+
+
+class States(Enum):
+    CHOOSING = 1
+    ANSWERING = 2
 
 
 def create_keyboard():
     keyboard = [
         [KeyboardButton("🆕 Новый вопрос"), KeyboardButton("🏳️ Сдаться")],
-        [KeyboardButton("📊 Мой счет")]
+        [KeyboardButton("📊 Мой счет"), KeyboardButton("🔄 Начать заново")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -51,51 +64,48 @@ def check_answer(user_answer, correct_answer):
     return user_answer == cleaned_correct
 
 
-def start_command(update, context):
+def start(update, context):
     reply_markup = create_keyboard()
-    update.message.reply_text("Здравствуйте", reply_markup=reply_markup)
+    welcome_message = (
+        "🎯 Добро пожаловать в игру «Викторина»!\n\n"
+        "Я задам вам вопросы из различных областей знаний. "
+        "Попробуйте ответить правильно!\n\n"
+        "Управление:\n"
+        "🆕 Новый вопрос — получить случайный вопрос\n"
+        "🏳️ Сдаться — показать правильный ответ\n"
+        "📊 Мой счет — посмотреть статистику\n"
+        "🔄 Начать заново — перезапустить бота\n\n"
+        "Нажмите «Новый вопрос» для начала!"
+    )
+    update.message.reply_text(welcome_message, reply_markup=reply_markup)
+    return States.CHOOSING
 
 
-def handle_buttons(update, context):
-    text = update.message.text
+def handle_new_question_request(update, context):
     user_id = update.effective_user.id
     redis_client = context.bot_data['redis_client']
     quiz_data_path = os.getenv("QUIZ_DATA_PATH", "quiz-json")
     
-    user_key = f"user:{user_id}:current_question"
+    question, answer = get_random_question(quiz_data_path)
     
-    if text == "🆕 Новый вопрос":
-        question, answer = get_random_question(quiz_data_path)
-        
-        question_data = {
-            "question": question,
-            "answer": answer
-        }
-        redis_client.set(user_key, json.dumps(question_data, ensure_ascii=False))
-        
-        update.message.reply_text(f"❓ {question}")
-
-    elif text == "🏳️ Сдаться":
-        stored_data = redis_client.get(user_key)
-        question_data = json.loads(stored_data)
-        answer = question_data['answer']
-        update.message.reply_text(f"✅ Правильный ответ: {answer}")
-        redis_client.delete(user_key)
-            
-    elif text == "📊 Мой счет":
-        update.message.reply_text("Функция 'Мой счет' пока не реализована")
-    else:
-        handle_answer(update, context)
+    question_data = {
+        "question": question,
+        "answer": answer
+    }
+    
+    user_key = f"user:{user_id}:current_question"
+    redis_client.set(user_key, json.dumps(question_data, ensure_ascii=False))
+    
+    update.message.reply_text(f"❓ {question}")
+    return States.ANSWERING
 
 
-def handle_answer(update, context):
-    """Обрабатывает ответ пользователя на вопрос"""
+def handle_solution_attempt(update, context):
     user_id = update.effective_user.id
     redis_client = context.bot_data['redis_client']
     user_key = f"user:{user_id}:current_question"
     
     stored_data = redis_client.get(user_key)
-    
     question_data = json.loads(stored_data)
     correct_answer = question_data['answer']
     user_answer = update.message.text
@@ -103,8 +113,35 @@ def handle_answer(update, context):
     if check_answer(user_answer, correct_answer):
         update.message.reply_text("Правильно! Поздравляю! Для следующего вопроса нажми «Новый вопрос»")
         redis_client.delete(user_key)
+        return States.CHOOSING
     else:
         update.message.reply_text("Неправильно… Попробуешь ещё раз?")
+        return States.ANSWERING
+
+
+def handle_give_up(update, context):
+    user_id = update.effective_user.id
+    redis_client = context.bot_data['redis_client']
+    user_key = f"user:{user_id}:current_question"
+    
+    stored_data = redis_client.get(user_key)
+    question_data = json.loads(stored_data)
+    answer = question_data['answer']
+    
+    clean_answer_text = clean_answer(answer)
+    
+    update.message.reply_text(f"✅ Правильный ответ: {clean_answer_text}")
+    redis_client.delete(user_key)
+    return States.CHOOSING
+
+
+def handle_score(update, context):
+    update.message.reply_text("Функция 'Мой счет' пока не реализована")
+    return States.CHOOSING
+
+
+def handle_restart(update, context):
+    return start(update, context)
 
 
 def main():
@@ -119,8 +156,24 @@ def main():
     
     dispatcher.bot_data['redis_client'] = redis_client
     
-    dispatcher.add_handler(CommandHandler("start", start_command))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_buttons))
+    conversation_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            States.CHOOSING: [
+                MessageHandler(Filters.regex("^🆕 Новый вопрос$"), handle_new_question_request),
+                MessageHandler(Filters.regex("^📊 Мой счет$"), handle_score),
+                MessageHandler(Filters.regex("^🔄 Начать заново$"), handle_restart),
+            ],
+            States.ANSWERING: [
+                MessageHandler(Filters.regex("^🏳️ Сдаться$"), handle_give_up),
+                MessageHandler(Filters.regex("^🔄 Начать заново$"), handle_restart),
+                MessageHandler(Filters.text & ~Filters.command, handle_solution_attempt),
+            ],
+        },
+        fallbacks=[CommandHandler("start", start)]
+    )
+    
+    dispatcher.add_handler(conversation_handler)
     
     updater.start_polling()
     updater.idle()
