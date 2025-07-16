@@ -145,3 +145,4 @@ parse_quiz_files.py
 read_quiz_file.py
 test_quiz.py
 check_paths.py
+test_bot_answers.py

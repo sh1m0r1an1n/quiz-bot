@@ -38,7 +38,7 @@
 
 ### 1. Клонирование репозитория
 ```bash
-git clone https://github.com/your-username/quiz-bot.git
+git clone https://github.com/sh1m0r1an1n/quiz-bot.git
 cd quiz-bot
 ```
 
@@ -52,15 +52,9 @@ pip install -r requirements.txt
 ```env
 TG_BOT_TOKEN=your_telegram_bot_token_here
 VK_GROUP_TOKEN=your_vk_group_token_here
-REDIS_URL=redis://localhost:6379
-QUIZ_DATA_PATH=quiz-json
+REDIS_URL=redis://:password@redis-host.com:port/0 # Если через Redis Labs
+QUIZ_DATA_PATH=quiz-json # Путь к папке с JSON файлами вопросов
 ```
-
-**Описание переменных:**
-- `TG_BOT_TOKEN` - токен Telegram бота (**обязательно**)
-- `VK_GROUP_TOKEN` - токен группы VK (**обязательно**)
-- `REDIS_URL` - URL подключения к Redis (**обязательно**)
-- `QUIZ_DATA_PATH` - путь к папке с JSON файлами вопросов (**обязательно**)
 
 ### 4. Подготовка данных викторин
 Создайте JSON файлы с вопросами и ответами в папке `quiz-json/` (можно создать несколько файлов - бот прочитает все файлы из папки).
