@@ -1,9 +1,6 @@
 import os
-import json
-import random
+import time
 import redis
-from enum import Enum
-from pathlib import Path
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
@@ -14,11 +11,21 @@ from telegram.ext import (
     CallbackContext,
     ConversationHandler
 )
-
-
-class States(Enum):
-    CHOOSING = 1
-    ANSWERING = 2
+from quiz_utils import (
+    States, 
+    WELCOME_MESSAGE, 
+    get_random_question, 
+    clean_answer, 
+    check_answer,
+    get_current_question_data,
+    get_redis_keys,
+    save_question_to_redis,
+    get_user_score,
+    increment_user_score,
+    clear_user_data,
+    get_user_state,
+    set_user_state
+)
 
 
 def create_keyboard():
@@ -29,101 +36,51 @@ def create_keyboard():
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
-def get_random_question(quiz_data_path):
-    quiz_directory = Path(quiz_data_path)
-    json_files = list(quiz_directory.glob("*.json"))
-    
-    random_file = random.choice(json_files)
-    
-    with open(random_file, 'r', encoding='utf-8') as file:
-        questions_data = json.load(file)
-    
-    random_question = random.choice(list(questions_data.keys()))
-    answer = questions_data[random_question]
-    
-    return random_question, answer
-
-
-def clean_answer(answer):
-    """Очищает ответ от пояснений в скобках и после точки"""
-    if '(' in answer:
-        answer = answer.split('(')[0]
-    
-    if '.' in answer:
-        answer = answer.split('.')[0]
-    
-    return answer.strip()
-
-
-def check_answer(user_answer, correct_answer):
-    cleaned_correct = clean_answer(correct_answer)
-    
-    user_answer = user_answer.strip().lower()
-    cleaned_correct = cleaned_correct.strip().lower()
-    
-    return user_answer == cleaned_correct
-
-
 def get_user_context(update, context):
     user_id = update.effective_user.id
     redis_client = context.bot_data['redis_client']
-    user_key = f"user:{user_id}:current_question"
+    keys = get_redis_keys(user_id)
     quiz_data_path = os.getenv("QUIZ_DATA_PATH", "quiz-json")
     
-    return user_id, redis_client, user_key, quiz_data_path
-
-
-def get_current_question_data(redis_client, user_key):
-    stored_data = redis_client.get(user_key)
-    return json.loads(stored_data)
+    return user_id, redis_client, keys, quiz_data_path
 
 
 def load_and_send_question(update, redis_client, user_key, quiz_data_path):
     question, answer = get_random_question(quiz_data_path)
-    
-    question_data = {
-        "question": question,
-        "answer": answer
-    }
-    
-    redis_client.set(user_key, json.dumps(question_data, ensure_ascii=False))
+    save_question_to_redis(redis_client, user_key, question, answer)
     update.message.reply_text(f"❓ {question}")
 
 
 def start(update, context):
+    user_id = update.effective_user.id
+    redis_client = context.bot_data['redis_client']
+    
     reply_markup = create_keyboard()
-    welcome_message = (
-        "🎯 Добро пожаловать в игру «Викторина»!\n\n"
-        "Я задам вам вопросы из различных областей знаний. "
-        "Попробуйте ответить правильно!\n\n"
-        "Управление:\n"
-        "🆕 Новый вопрос — получить случайный вопрос\n"
-        "🏳️ Сдаться — показать правильный ответ\n"
-        "📊 Мой счет — посмотреть статистику\n"
-        "🔄 Начать заново — перезапустить бота\n\n"
-        "Нажмите «Новый вопрос» для начала!"
-    )
-    update.message.reply_text(welcome_message, reply_markup=reply_markup)
+    update.message.reply_text(WELCOME_MESSAGE, reply_markup=reply_markup)
+    set_user_state(redis_client, user_id, States.CHOOSING)
     return States.CHOOSING
 
 
 def handle_new_question_request(update, context):
-    user_id, redis_client, user_key, quiz_data_path = get_user_context(update, context)
+    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
     
-    load_and_send_question(update, redis_client, user_key, quiz_data_path)
+    load_and_send_question(update, redis_client, keys['question'], quiz_data_path)
+    set_user_state(redis_client, user_id, States.ANSWERING)
     return States.ANSWERING
 
 
 def handle_solution_attempt(update, context):
-    user_id, redis_client, user_key, quiz_data_path = get_user_context(update, context)
+    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
     
-    question_data = get_current_question_data(redis_client, user_key)
+    question_data = get_current_question_data(redis_client, keys['question'])
     correct_answer = question_data['answer']
     user_answer = update.message.text
     
     if check_answer(user_answer, correct_answer):
+        increment_user_score(redis_client, user_id)
         update.message.reply_text("Правильно! Поздравляю! Для следующего вопроса нажми «Новый вопрос»")
-        redis_client.delete(user_key)
+        redis_client.delete(keys['question'])
+        set_user_state(redis_client, user_id, States.CHOOSING)
         return States.CHOOSING
     else:
         update.message.reply_text("Неправильно… Попробуешь ещё раз?")
@@ -131,28 +88,35 @@ def handle_solution_attempt(update, context):
 
 
 def handle_give_up(update, context):
-    user_id, redis_client, user_key, quiz_data_path = get_user_context(update, context)
+    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
     
-    question_data = get_current_question_data(redis_client, user_key)
+    question_data = get_current_question_data(redis_client, keys['question'])
     answer = question_data['answer']
     
     clean_answer_text = clean_answer(answer)
     update.message.reply_text(f"✅ Правильный ответ: {clean_answer_text}")
     
-    load_and_send_question(update, redis_client, user_key, quiz_data_path)
+    load_and_send_question(update, redis_client, keys['question'], quiz_data_path)
+    set_user_state(redis_client, user_id, States.ANSWERING)
     return States.ANSWERING
 
 
 def handle_score(update, context):
-    update.message.reply_text("Функция 'Мой счет' пока не реализована")
-    return States.CHOOSING
+    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
+    current_score = get_user_score(redis_client, user_id)
+    update.message.reply_text(f"📊 Ваш счет: {current_score} правильных ответов")
+    
+    current_state = get_user_state(redis_client, user_id)
+    return current_state
 
 
 def handle_restart(update, context):
+    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
+    clear_user_data(redis_client, user_id)
     return start(update, context)
 
 
-def main():
+def run_bot():
     load_dotenv()
     bot_token = os.environ["TG_BOT_TOKEN"]
     redis_url = os.environ["REDIS_URL"]
@@ -174,6 +138,7 @@ def main():
             ],
             States.ANSWERING: [
                 MessageHandler(Filters.regex("^🏳️ Сдаться$"), handle_give_up),
+                MessageHandler(Filters.regex("^📊 Мой счет$"), handle_score),
                 MessageHandler(Filters.regex("^🔄 Начать заново$"), handle_restart),
                 MessageHandler(Filters.text & ~Filters.command, handle_solution_attempt),
             ],
@@ -185,6 +150,14 @@ def main():
     
     updater.start_polling()
     updater.idle()
+
+
+def main():
+    while True:
+        try:
+            run_bot()
+        except Exception as e:
+            time.sleep(5)
 
 
 if __name__ == "__main__":
