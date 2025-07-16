@@ -36,9 +36,21 @@ def load_and_send_question(update, redis_client, user_key, quiz_data_path):
     update.message.reply_text(f"❓ {question}")
 
 
-def start(update, context):
-    user_id = update.effective_user.id
-    redis_client = context.bot_data['redis_client']
+def smart_entry_handler(update, context):
+    """Умный обработчик входа, который проверяет состояние в Redis и восстанавливает сессию."""
+    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
+    
+    current_state = get_user_state(redis_client, user_id)
+    
+    if current_state == States.ANSWERING:
+        question_data = get_current_question_data(redis_client, keys['question'])
+        if question_data:
+            reply_markup = create_keyboard()
+            update.message.reply_text(
+                f"🔄 Добро пожаловать обратно!\n\n❓ {question_data['question']}", 
+                reply_markup=reply_markup
+            )
+            return States.ANSWERING
     
     reply_markup = create_keyboard()
     update.message.reply_text(WELCOME_MESSAGE, reply_markup=reply_markup)
@@ -96,25 +108,28 @@ def handle_score(update, context):
 
 
 def handle_fallback(update, context):
-    """Обработчик для восстановления состояния после перезапуска бота."""
+    """Обработчик для неизвестных сообщений."""
     user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
     
     current_state = get_user_state(redis_client, user_id)
     
     if current_state == States.ANSWERING:
-        try:
-            question_data = get_current_question_data(redis_client, keys['question'])
+        question_data = get_current_question_data(redis_client, keys['question'])
+        if question_data:
             reply_markup = create_keyboard()
             update.message.reply_text(
-                f"🔄 Восстановлено состояние.\n\n❓ {question_data['question']}", 
+                f"❓ {question_data['question']}\n\n💡 Используйте кнопки для управления ботом", 
                 reply_markup=reply_markup
             )
             return States.ANSWERING
-        except:
-            set_user_state(redis_client, user_id, States.CHOOSING)
-            return start(update, context)
     
-    return start(update, context)
+    reply_markup = create_keyboard()
+    update.message.reply_text(
+        "💡 Используйте кнопки для управления ботом",
+        reply_markup=reply_markup
+    )
+    set_user_state(redis_client, user_id, States.CHOOSING)
+    return States.CHOOSING
 
 
 def run_bot():
@@ -130,7 +145,10 @@ def run_bot():
     dispatcher.bot_data['redis_client'] = redis_client
     
     conversation_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[
+            CommandHandler("start", smart_entry_handler),
+            MessageHandler(Filters.all, smart_entry_handler)
+        ],
         states={
             States.CHOOSING: [
                 MessageHandler(Filters.regex("^🆕 Новый вопрос$"), handle_new_question_request),
@@ -143,7 +161,7 @@ def run_bot():
             ],
         },
         fallbacks=[
-            CommandHandler("start", start),
+            CommandHandler("start", smart_entry_handler),
             MessageHandler(Filters.all, handle_fallback)
         ]
     )
