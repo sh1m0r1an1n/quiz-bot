@@ -1,25 +1,17 @@
 import os
-import time
 import random
+import time
+
 import redis
-from dotenv import load_dotenv
 import vk_api
+from dotenv import load_dotenv
 from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+
 from quiz_utils import (
-    States, 
-    WELCOME_MESSAGE, 
-    get_random_question, 
-    clean_answer, 
-    check_answer,
-    get_current_question_data,
-    get_redis_keys,
-    save_question_to_redis,
-    get_user_score,
-    increment_user_score,
-    clear_user_data,
-    get_user_state,
-    set_user_state
+    States, WELCOME_MESSAGE, get_random_question, clean_answer, check_answer,
+    get_current_question_data, get_redis_keys, save_question_to_redis,
+    get_user_score, increment_user_score, get_user_state, set_user_state
 )
 
 
@@ -30,7 +22,6 @@ def create_keyboard():
     keyboard.add_button('🏳️ Сдаться', color=VkKeyboardColor.NEGATIVE)
     keyboard.add_line()
     keyboard.add_button('📊 Мой счет', color=VkKeyboardColor.SECONDARY)
-    keyboard.add_button('🔄 Начать заново', color=VkKeyboardColor.POSITIVE)
     
     return keyboard.get_keyboard()
 
@@ -100,17 +91,12 @@ def handle_score(vk, user_id, redis_client):
     send_message(vk, user_id, f"📊 Ваш счет: {current_score} правильных ответов", keyboard)
 
 
-def handle_restart(vk, user_id, redis_client):
-    clear_user_data(redis_client, user_id)
-    handle_start(vk, user_id, redis_client)
-
-
 def run_bot():
     load_dotenv()
     
-    vk_token = os.getenv('VK_GROUP_TOKEN')
-    redis_url = os.getenv('REDIS_URL')
-    quiz_data_path = os.getenv("QUIZ_DATA_PATH", "quiz-json")
+    vk_token = os.environ["VK_GROUP_TOKEN"]
+    redis_url = os.environ["REDIS_URL"]
+    quiz_data_path = os.environ["QUIZ_DATA_PATH"]
     
     redis_client = redis.from_url(redis_url, decode_responses=True)
     
@@ -126,8 +112,8 @@ def run_bot():
             
             user_state = get_user_state(redis_client, user_id)
             
-            if message.lower() in ['привет', 'hello', 'hi', 'start'] or message == '🔄 Начать заново':
-                handle_restart(vk, user_id, redis_client)
+            if message.lower() in ['привет', 'hello', 'hi', 'start']:
+                handle_start(vk, user_id, redis_client)
             elif user_state == States.CHOOSING:
                 if message == '🆕 Новый вопрос':
                     handle_new_question(vk, user_id, redis_client, quiz_data_path)
@@ -146,13 +132,9 @@ def run_bot():
                     handle_solution_attempt(vk, user_id, message, redis_client)
 
 
-def main():
+if __name__ == "__main__":
     while True:
         try:
             run_bot()
         except Exception as e:
-            time.sleep(5)
-
-
-if __name__ == "__main__":
-    main() 
+            time.sleep(5) 

@@ -139,3 +139,9 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Personal utility scripts
+parse_quiz_files.py
+read_quiz_file.py
+test_quiz.py
+check_paths.py

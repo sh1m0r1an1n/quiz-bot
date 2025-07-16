@@ -1,37 +1,22 @@
 import os
 import time
+
 import redis
 from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import (
-    Updater, 
-    CommandHandler, 
-    MessageHandler, 
-    Filters, 
-    CallbackContext,
-    ConversationHandler
-)
+from telegram import ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
+
 from quiz_utils import (
-    States, 
-    WELCOME_MESSAGE, 
-    get_random_question, 
-    clean_answer, 
-    check_answer,
-    get_current_question_data,
-    get_redis_keys,
-    save_question_to_redis,
-    get_user_score,
-    increment_user_score,
-    clear_user_data,
-    get_user_state,
-    set_user_state
+    States, WELCOME_MESSAGE, get_random_question, clean_answer, check_answer,
+    get_current_question_data, get_redis_keys, save_question_to_redis,
+    get_user_score, increment_user_score, get_user_state, set_user_state
 )
 
 
 def create_keyboard():
     keyboard = [
         [KeyboardButton("🆕 Новый вопрос"), KeyboardButton("🏳️ Сдаться")],
-        [KeyboardButton("📊 Мой счет"), KeyboardButton("🔄 Начать заново")]
+        [KeyboardButton("📊 Мой счет")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -40,7 +25,7 @@ def get_user_context(update, context):
     user_id = update.effective_user.id
     redis_client = context.bot_data['redis_client']
     keys = get_redis_keys(user_id)
-    quiz_data_path = os.getenv("QUIZ_DATA_PATH", "quiz-json")
+    quiz_data_path = os.environ["QUIZ_DATA_PATH"]
     
     return user_id, redis_client, keys, quiz_data_path
 
@@ -110,9 +95,25 @@ def handle_score(update, context):
     return current_state
 
 
-def handle_restart(update, context):
+def handle_fallback(update, context):
+    """Обработчик для восстановления состояния после перезапуска бота."""
     user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
-    clear_user_data(redis_client, user_id)
+    
+    current_state = get_user_state(redis_client, user_id)
+    
+    if current_state == States.ANSWERING:
+        try:
+            question_data = get_current_question_data(redis_client, keys['question'])
+            reply_markup = create_keyboard()
+            update.message.reply_text(
+                f"🔄 Восстановлено состояние.\n\n❓ {question_data['question']}", 
+                reply_markup=reply_markup
+            )
+            return States.ANSWERING
+        except:
+            set_user_state(redis_client, user_id, States.CHOOSING)
+            return start(update, context)
+    
     return start(update, context)
 
 
@@ -134,16 +135,17 @@ def run_bot():
             States.CHOOSING: [
                 MessageHandler(Filters.regex("^🆕 Новый вопрос$"), handle_new_question_request),
                 MessageHandler(Filters.regex("^📊 Мой счет$"), handle_score),
-                MessageHandler(Filters.regex("^🔄 Начать заново$"), handle_restart),
             ],
             States.ANSWERING: [
                 MessageHandler(Filters.regex("^🏳️ Сдаться$"), handle_give_up),
                 MessageHandler(Filters.regex("^📊 Мой счет$"), handle_score),
-                MessageHandler(Filters.regex("^🔄 Начать заново$"), handle_restart),
                 MessageHandler(Filters.text & ~Filters.command, handle_solution_attempt),
             ],
         },
-        fallbacks=[CommandHandler("start", start)]
+        fallbacks=[
+            CommandHandler("start", start),
+            MessageHandler(Filters.all, handle_fallback)
+        ]
     )
     
     dispatcher.add_handler(conversation_handler)
@@ -152,13 +154,9 @@ def run_bot():
     updater.idle()
 
 
-def main():
+if __name__ == "__main__":
     while True:
         try:
             run_bot()
         except Exception as e:
-            time.sleep(5)
-
-
-if __name__ == "__main__":
-    main() 
+            time.sleep(5) 
