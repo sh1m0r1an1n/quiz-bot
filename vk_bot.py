@@ -36,19 +36,20 @@ def send_message(vk, user_id, message, keyboard=None):
 
 
 def handle_start(vk, user_id, redis_client):
+    keys = get_redis_keys(user_id)
     keyboard = create_keyboard()
     send_message(vk, user_id, WELCOME_MESSAGE, keyboard)
-    set_user_state(redis_client, user_id, States.CHOOSING)
+    new_state = set_user_state(redis_client, keys['state'], States.CHOOSING)
 
 
 def handle_new_question(vk, user_id, redis_client, questions_dict):
     keys = get_redis_keys(user_id)
     
     question, answer = get_random_question(questions_dict)
-    save_question_to_redis(redis_client, keys['question'], question, answer)
+    question_entry = save_question_to_redis(redis_client, keys['question'], question, answer)
     keyboard = create_keyboard()
     send_message(vk, user_id, f"❓ {question}", keyboard)
-    set_user_state(redis_client, user_id, States.ANSWERING)
+    new_state = set_user_state(redis_client, keys['state'], States.ANSWERING)
 
 
 def handle_solution_attempt(vk, user_id, message, redis_client):
@@ -57,12 +58,15 @@ def handle_solution_attempt(vk, user_id, message, redis_client):
     question_data = get_current_question(redis_client, keys['question'])
     correct_answer = question_data['answer']
     
-    if check_answer(message, correct_answer):
-        increment_user_score(redis_client, user_id)
+    is_correct = check_answer(message, correct_answer)
+    
+    if is_correct:
+        current_score = get_user_score(redis_client, keys['score'])
+        new_score = increment_user_score(redis_client, keys['score'], current_score)
         keyboard = create_keyboard()
         send_message(vk, user_id, "Правильно! Поздравляю! Для следующего вопроса нажми «Новый вопрос»", keyboard)
         redis_client.delete(keys['question'])
-        set_user_state(redis_client, user_id, States.CHOOSING)
+        new_state = set_user_state(redis_client, keys['state'], States.CHOOSING)
     else:
         keyboard = create_keyboard()
         send_message(vk, user_id, "Неправильно… Попробуешь ещё раз?", keyboard)
@@ -78,20 +82,22 @@ def handle_give_up(vk, user_id, redis_client, questions_dict):
     send_message(vk, user_id, f"✅ Правильный ответ: {clean_answer_text}", keyboard)
     
     question, answer = get_random_question(questions_dict)
-    save_question_to_redis(redis_client, keys['question'], question, answer)
+    question_entry = save_question_to_redis(redis_client, keys['question'], question, answer)
     keyboard = create_keyboard()
     send_message(vk, user_id, f"❓ {question}", keyboard)
-    set_user_state(redis_client, user_id, States.ANSWERING)
+    new_state = set_user_state(redis_client, keys['state'], States.ANSWERING)
 
 
 def handle_score(vk, user_id, redis_client):
-    current_score = get_user_score(redis_client, user_id)
+    keys = get_redis_keys(user_id)
+    current_score = get_user_score(redis_client, keys['score'])
     keyboard = create_keyboard()
     send_message(vk, user_id, f"📊 Ваш счет: {current_score} правильных ответов", keyboard)
 
 
 def handle_user_message(vk, user_id, message, redis_client, questions_dict):
-    user_state = get_user_state(redis_client, user_id)
+    keys = get_redis_keys(user_id)
+    user_state = get_user_state(redis_client, keys['state'])
     
     if message.lower() in ['привет', 'hello', 'hi', 'start']:
         handle_start(vk, user_id, redis_client)
@@ -143,8 +149,6 @@ def main():
                 if event.type == VkEventType.MESSAGE_NEW and event.to_me:
                     user_id = event.user_id
                     message = event.text.strip()
-                    
-                    user_state = get_user_state(redis_client, user_id)
                     
                     handle_user_message(vk, user_id, message, redis_client, questions_dict)
         except Exception as e:

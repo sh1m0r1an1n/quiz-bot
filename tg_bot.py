@@ -34,7 +34,7 @@ def get_user_context(update, context):
 def smart_entry_handler(update, context):
     user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
-    current_state = get_user_state(redis_client, user_id)
+    current_state = get_user_state(redis_client, keys['state'])
     
     if current_state == States.ANSWERING:
         question_data = get_current_question(redis_client, keys['question'])
@@ -48,18 +48,18 @@ def smart_entry_handler(update, context):
     
     reply_markup = create_keyboard()
     update.message.reply_text(WELCOME_MESSAGE, reply_markup=reply_markup)
-    set_user_state(redis_client, user_id, States.CHOOSING)
-    return States.CHOOSING
+    new_state = set_user_state(redis_client, keys['state'], States.CHOOSING)
+    return new_state
 
 
 def handle_new_question_request(update, context):
     user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
     question, answer = get_random_question(questions_dict)
-    save_question_to_redis(redis_client, keys['question'], question, answer)
+    question_entry = save_question_to_redis(redis_client, keys['question'], question, answer)
     update.message.reply_text(f"❓ {question}")
-    set_user_state(redis_client, user_id, States.ANSWERING)
-    return States.ANSWERING
+    new_state = set_user_state(redis_client, keys['state'], States.ANSWERING)
+    return new_state
 
 
 def handle_solution_attempt(update, context):
@@ -69,12 +69,15 @@ def handle_solution_attempt(update, context):
     correct_answer = question_data['answer']
     user_answer = update.message.text
     
-    if check_answer(user_answer, correct_answer):
-        increment_user_score(redis_client, user_id)
+    is_correct = check_answer(user_answer, correct_answer)
+    
+    if is_correct:
+        current_score = get_user_score(redis_client, keys['score'])
+        new_score = increment_user_score(redis_client, keys['score'], current_score)
         update.message.reply_text("Правильно! Поздравляю! Для следующего вопроса нажми «Новый вопрос»")
         redis_client.delete(keys['question'])
-        set_user_state(redis_client, user_id, States.CHOOSING)
-        return States.CHOOSING
+        new_state = set_user_state(redis_client, keys['state'], States.CHOOSING)
+        return new_state
     else:
         update.message.reply_text("Неправильно… Попробуешь ещё раз?")
         return States.ANSWERING
@@ -90,25 +93,26 @@ def handle_give_up(update, context):
     update.message.reply_text(f"✅ Правильный ответ: {clean_answer_text}")
     
     question, answer = get_random_question(questions_dict)
-    save_question_to_redis(redis_client, keys['question'], question, answer)
+    question_entry = save_question_to_redis(redis_client, keys['question'], question, answer)
     update.message.reply_text(f"❓ {question}")
-    set_user_state(redis_client, user_id, States.ANSWERING)
-    return States.ANSWERING
+    new_state = set_user_state(redis_client, keys['state'], States.ANSWERING)
+    return new_state
 
 
 def handle_score(update, context):
     user_id, redis_client, keys, questions_dict = get_user_context(update, context)
-    current_score = get_user_score(redis_client, user_id)
+    
+    current_score = get_user_score(redis_client, keys['score'])
     update.message.reply_text(f"📊 Ваш счет: {current_score} правильных ответов")
     
-    current_state = get_user_state(redis_client, user_id)
+    current_state = get_user_state(redis_client, keys['state'])
     return current_state
 
 
 def handle_fallback(update, context):
     user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
-    current_state = get_user_state(redis_client, user_id)
+    current_state = get_user_state(redis_client, keys['state'])
     
     if current_state == States.ANSWERING:
         question_data = get_current_question(redis_client, keys['question'])
@@ -125,8 +129,8 @@ def handle_fallback(update, context):
         "💡 Используйте кнопки для управления ботом",
         reply_markup=reply_markup
     )
-    set_user_state(redis_client, user_id, States.CHOOSING)
-    return States.CHOOSING
+    new_state = set_user_state(redis_client, keys['state'], States.CHOOSING)
+    return new_state
 
 
 def main():

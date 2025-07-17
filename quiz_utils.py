@@ -61,8 +61,8 @@ def check_answer(user_answer, correct_answer):
     return user_answer == cleaned_correct
 
 
-def get_current_question(redis_client, user_key):
-    stored_json = redis_client.get(user_key)
+def get_current_question(redis_client, question_key):
+    stored_json = redis_client.get(question_key)
     return json.loads(stored_json)
 
 
@@ -74,40 +74,38 @@ def get_redis_keys(user_id):
     }
 
 
-def save_question_to_redis(redis_client, user_key, question, answer):
+def save_question_to_redis(redis_client, question_key, question, answer):
     question_entry = {
         "question": question,
         "answer": answer
     }
-    redis_client.set(user_key, json.dumps(question_entry, ensure_ascii=False))
+    redis_client.set(question_key, json.dumps(question_entry, ensure_ascii=False))
+    return question_entry
 
 
-def get_user_score(redis_client, user_id):
-    keys = get_redis_keys(user_id)
-    return int(redis_client.get(keys['score']) or 0)
+def get_user_score(redis_client, score_key):
+    return int(redis_client.get(score_key) or 0)
 
 
-def increment_user_score(redis_client, user_id):
-    keys = get_redis_keys(user_id)
-    current_score = get_user_score(redis_client, user_id)
-    redis_client.set(keys['score'], current_score + 1)
+def increment_user_score(redis_client, score_key, current_score):
+    new_score = current_score + 1
+    redis_client.set(score_key, new_score)
+    return new_score
 
 
-def clear_user_session(redis_client, user_id):
-    keys = get_redis_keys(user_id)
-    redis_client.delete(keys['question'])
-    redis_client.delete(keys['state'])
-    redis_client.delete(keys['score'])
+def clear_user_session(redis_client, user_keys):
+    redis_client.delete(user_keys['question'])
+    redis_client.delete(user_keys['state'])
+    redis_client.delete(user_keys['score'])
 
 
-def get_user_state(redis_client, user_id):
-    keys = get_redis_keys(user_id)
-    state = redis_client.get(keys['state'])
+def get_user_state(redis_client, state_key):
+    state = redis_client.get(state_key)
     if state:
         return States(int(state))
     return States.CHOOSING
 
 
-def set_user_state(redis_client, user_id, state):
-    keys = get_redis_keys(user_id)
-    redis_client.set(keys['state'], state.value) 
+def set_user_state(redis_client, state_key, state):
+    redis_client.set(state_key, state.value)
+    return state 
