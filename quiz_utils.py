@@ -1,7 +1,7 @@
-import json
-import random
 from enum import Enum
+import json
 from pathlib import Path
+import random
 
 
 class States(Enum):

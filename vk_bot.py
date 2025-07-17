@@ -2,17 +2,17 @@ import os
 import random
 import time
 
+from dotenv import load_dotenv
 import redis
 import vk_api
-from dotenv import load_dotenv
-from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+from vk_api.longpoll import VkEventType, VkLongPoll
 
-from quiz_utils import (
-    States, WELCOME_MESSAGE, get_random_question, clean_answer, check_answer,
-    get_current_question, get_redis_keys, save_question_to_redis,
-    get_user_score, increment_user_score, get_user_state, set_user_state
-)
+from quiz_utils import (WELCOME_MESSAGE, States, check_answer, clean_answer,
+                        get_current_question, get_random_question,
+                        get_redis_keys, get_user_score, get_user_state,
+                        increment_user_score, save_question_to_redis,
+                        set_user_state)
 
 
 def create_keyboard():
