@@ -93,12 +93,6 @@ def increment_user_score(redis_client, score_key, current_score):
     return new_score
 
 
-def clear_user_session(redis_client, user_keys):
-    redis_client.delete(user_keys['question'])
-    redis_client.delete(user_keys['state'])
-    redis_client.delete(user_keys['score'])
-
-
 def get_user_state(redis_client, state_key):
     state = redis_client.get(state_key)
     if state:
