@@ -21,17 +21,17 @@ WELCOME_MESSAGE = (
 )
 
 
-def get_random_question(quiz_data_path):
-    quiz_directory = Path(quiz_data_path)
+def get_random_question(quiz_directory_path):
+    quiz_directory = Path(quiz_directory_path)
     json_files = list(quiz_directory.glob("*.json"))
     
-    random_file = random.choice(json_files)
+    question_file = random.choice(json_files)
     
-    with open(random_file, 'r', encoding='utf-8') as file:
-        questions_data = json.load(file)
+    with open(question_file, 'r', encoding='utf-8') as file:
+        questions = json.load(file)
     
-    random_question = random.choice(list(questions_data.keys()))
-    answer = questions_data[random_question]
+    random_question = random.choice(list(questions.keys()))
+    answer = questions[random_question]
     
     return random_question, answer
 
@@ -56,8 +56,8 @@ def check_answer(user_answer, correct_answer):
 
 
 def get_current_question_data(redis_client, user_key):
-    stored_data = redis_client.get(user_key)
-    return json.loads(stored_data)
+    stored_json = redis_client.get(user_key)
+    return json.loads(stored_json)
 
 
 def get_redis_keys(user_id):
@@ -69,11 +69,11 @@ def get_redis_keys(user_id):
 
 
 def save_question_to_redis(redis_client, user_key, question, answer):
-    question_data = {
+    question_entry = {
         "question": question,
         "answer": answer
     }
-    redis_client.set(user_key, json.dumps(question_data, ensure_ascii=False))
+    redis_client.set(user_key, json.dumps(question_entry, ensure_ascii=False))
 
 
 def get_user_score(redis_client, user_id):

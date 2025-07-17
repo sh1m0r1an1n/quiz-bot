@@ -5,10 +5,10 @@ __pycache__/
 .idea
 quiz-json/
 quiz-questions/
-
+media
 # C extensions
 *.so
-
+merge_quiz_files.py
 # Distribution / packaging
 .Python
 build/
