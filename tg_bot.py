@@ -10,8 +10,8 @@ from telegram.ext import (CommandHandler, ConversationHandler, Filters,
 from quiz_utils import (WELCOME_MESSAGE, States, check_answer, clean_answer,
                         get_current_question, get_random_question,
                         get_redis_keys, get_user_score, get_user_state,
-                        increment_user_score, save_question_to_redis,
-                        set_user_state)
+                        increment_user_score, load_all_questions,
+                        save_question_to_redis, set_user_state)
 
 
 def create_keyboard():
@@ -26,20 +26,13 @@ def get_user_context(update, context):
     user_id = update.effective_user.id
     redis_client = context.bot_data['redis_client']
     keys = get_redis_keys(user_id)
-    quiz_data_path = os.environ["QUIZ_DATA_PATH"]
+    questions_dict = context.bot_data['questions_dict']
     
-    return user_id, redis_client, keys, quiz_data_path
-
-
-def load_and_send_question(update, redis_client, user_key, quiz_data_path):
-    question, answer = get_random_question(quiz_data_path)
-    save_question_to_redis(redis_client, user_key, question, answer)
-    update.message.reply_text(f"❓ {question}")
+    return user_id, redis_client, keys, questions_dict
 
 
 def smart_entry_handler(update, context):
-    """Умный обработчик входа, который проверяет состояние в Redis и восстанавливает сессию."""
-    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
+    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
     current_state = get_user_state(redis_client, user_id)
     
@@ -60,15 +53,17 @@ def smart_entry_handler(update, context):
 
 
 def handle_new_question_request(update, context):
-    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
+    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
-    load_and_send_question(update, redis_client, keys['question'], quiz_data_path)
+    question, answer = get_random_question(questions_dict)
+    save_question_to_redis(redis_client, keys['question'], question, answer)
+    update.message.reply_text(f"❓ {question}")
     set_user_state(redis_client, user_id, States.ANSWERING)
     return States.ANSWERING
 
 
 def handle_solution_attempt(update, context):
-    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
+    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
     question_data = get_current_question(redis_client, keys['question'])
     correct_answer = question_data['answer']
@@ -86,7 +81,7 @@ def handle_solution_attempt(update, context):
 
 
 def handle_give_up(update, context):
-    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
+    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
     question_data = get_current_question(redis_client, keys['question'])
     answer = question_data['answer']
@@ -94,13 +89,15 @@ def handle_give_up(update, context):
     clean_answer_text = clean_answer(answer)
     update.message.reply_text(f"✅ Правильный ответ: {clean_answer_text}")
     
-    load_and_send_question(update, redis_client, keys['question'], quiz_data_path)
+    question, answer = get_random_question(questions_dict)
+    save_question_to_redis(redis_client, keys['question'], question, answer)
+    update.message.reply_text(f"❓ {question}")
     set_user_state(redis_client, user_id, States.ANSWERING)
     return States.ANSWERING
 
 
 def handle_score(update, context):
-    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
+    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     current_score = get_user_score(redis_client, user_id)
     update.message.reply_text(f"📊 Ваш счет: {current_score} правильных ответов")
     
@@ -109,8 +106,7 @@ def handle_score(update, context):
 
 
 def handle_fallback(update, context):
-    """Обработчик для неизвестных сообщений."""
-    user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
+    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
     current_state = get_user_state(redis_client, user_id)
     
@@ -137,13 +133,16 @@ def run_bot():
     load_dotenv()
     bot_token = os.environ["TG_BOT_TOKEN"]
     redis_url = os.environ["REDIS_URL"]
+    quiz_data_path = os.environ["QUIZ_DATA_PATH"]
     
     redis_client = redis.from_url(redis_url, decode_responses=True)
+    questions_dict = load_all_questions(quiz_data_path)
     
     updater = Updater(token=bot_token)
     dispatcher = updater.dispatcher
     
     dispatcher.bot_data['redis_client'] = redis_client
+    dispatcher.bot_data['questions_dict'] = questions_dict
     
     conversation_handler = ConversationHandler(
         entry_points=[

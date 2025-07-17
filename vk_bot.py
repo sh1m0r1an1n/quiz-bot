@@ -11,8 +11,8 @@ from vk_api.longpoll import VkEventType, VkLongPoll
 from quiz_utils import (WELCOME_MESSAGE, States, check_answer, clean_answer,
                         get_current_question, get_random_question,
                         get_redis_keys, get_user_score, get_user_state,
-                        increment_user_score, save_question_to_redis,
-                        set_user_state)
+                        increment_user_score, load_all_questions,
+                        save_question_to_redis, set_user_state)
 
 
 def create_keyboard():
@@ -35,23 +35,19 @@ def send_message(vk, user_id, message, keyboard=None):
     )
 
 
-def load_and_send_question(vk, user_id, redis_client, user_key, quiz_data_path):
-    question, answer = get_random_question(quiz_data_path)
-    save_question_to_redis(redis_client, user_key, question, answer)
-    keyboard = create_keyboard()
-    send_message(vk, user_id, f"❓ {question}", keyboard)
-
-
 def handle_start(vk, user_id, redis_client):
     keyboard = create_keyboard()
     send_message(vk, user_id, WELCOME_MESSAGE, keyboard)
     set_user_state(redis_client, user_id, States.CHOOSING)
 
 
-def handle_new_question(vk, user_id, redis_client, quiz_data_path):
+def handle_new_question(vk, user_id, redis_client, questions_dict):
     keys = get_redis_keys(user_id)
     
-    load_and_send_question(vk, user_id, redis_client, keys['question'], quiz_data_path)
+    question, answer = get_random_question(questions_dict)
+    save_question_to_redis(redis_client, keys['question'], question, answer)
+    keyboard = create_keyboard()
+    send_message(vk, user_id, f"❓ {question}", keyboard)
     set_user_state(redis_client, user_id, States.ANSWERING)
 
 
@@ -72,7 +68,7 @@ def handle_solution_attempt(vk, user_id, message, redis_client):
         send_message(vk, user_id, "Неправильно… Попробуешь ещё раз?", keyboard)
 
 
-def handle_give_up(vk, user_id, redis_client, quiz_data_path):
+def handle_give_up(vk, user_id, redis_client, questions_dict):
     keys = get_redis_keys(user_id)
     
     question_data = get_current_question(redis_client, keys['question'])
@@ -81,7 +77,10 @@ def handle_give_up(vk, user_id, redis_client, quiz_data_path):
     keyboard = create_keyboard()
     send_message(vk, user_id, f"✅ Правильный ответ: {clean_answer_text}", keyboard)
     
-    load_and_send_question(vk, user_id, redis_client, keys['question'], quiz_data_path)
+    question, answer = get_random_question(questions_dict)
+    save_question_to_redis(redis_client, keys['question'], question, answer)
+    keyboard = create_keyboard()
+    send_message(vk, user_id, f"❓ {question}", keyboard)
     set_user_state(redis_client, user_id, States.ANSWERING)
 
 
@@ -99,6 +98,7 @@ def run_bot():
     quiz_data_path = os.environ["QUIZ_DATA_PATH"]
     
     redis_client = redis.from_url(redis_url, decode_responses=True)
+    questions_dict = load_all_questions(quiz_data_path)
     
     vk_session = vk_api.VkApi(token=vk_token)
     vk = vk_session.get_api()
@@ -116,18 +116,18 @@ def run_bot():
                 handle_start(vk, user_id, redis_client)
             elif user_state == States.CHOOSING:
                 if message == '🆕 Новый вопрос':
-                    handle_new_question(vk, user_id, redis_client, quiz_data_path)
+                    handle_new_question(vk, user_id, redis_client, questions_dict)
                 elif message == '📊 Мой счет':
                     handle_score(vk, user_id, redis_client)
                 else:
                     handle_start(vk, user_id, redis_client)
             elif user_state == States.ANSWERING:
                 if message == '🏳️ Сдаться':
-                    handle_give_up(vk, user_id, redis_client, quiz_data_path)
+                    handle_give_up(vk, user_id, redis_client, questions_dict)
                 elif message == '📊 Мой счет':
                     handle_score(vk, user_id, redis_client)
                 elif message == '🆕 Новый вопрос':
-                    handle_new_question(vk, user_id, redis_client, quiz_data_path)
+                    handle_new_question(vk, user_id, redis_client, questions_dict)
                 else:
                     handle_solution_attempt(vk, user_id, message, redis_client)
 

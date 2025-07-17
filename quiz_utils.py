@@ -21,17 +21,23 @@ WELCOME_MESSAGE = (
 )
 
 
-def get_random_question(quiz_directory_path):
+def load_all_questions(quiz_directory_path):
     quiz_directory = Path(quiz_directory_path)
     json_files = list(quiz_directory.glob("*.json"))
     
-    question_file = random.choice(json_files)
+    all_questions = {}
     
-    with open(question_file, 'r', encoding='utf-8') as file:
-        questions = json.load(file)
+    for json_file in json_files:
+        with open(json_file, 'r', encoding='utf-8') as file:
+            questions = json.load(file)
+            all_questions.update(questions)
     
-    random_question = random.choice(list(questions.keys()))
-    answer = questions[random_question]
+    return all_questions
+
+
+def get_random_question(questions_dict):
+    random_question = random.choice(list(questions_dict.keys()))
+    answer = questions_dict[random_question]
     
     return random_question, answer
 
