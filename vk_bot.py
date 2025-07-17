@@ -35,46 +35,38 @@ def send_message(vk, user_id, message, keyboard=None):
     )
 
 
-def handle_start(vk, user_id, redis_client):
-    keys = get_redis_keys(user_id)
+def handle_start(vk, user_id, redis_client, keys):
     keyboard = create_keyboard()
     send_message(vk, user_id, WELCOME_MESSAGE, keyboard)
-    new_state = set_user_state(redis_client, keys['state'], States.CHOOSING)
+    set_user_state(redis_client, keys['state'], States.CHOOSING)
 
 
-def handle_new_question(vk, user_id, redis_client, questions_dict):
-    keys = get_redis_keys(user_id)
-    
+def handle_new_question(vk, user_id, redis_client, questions_dict, keys):
     question, answer = get_random_question(questions_dict)
-    question_entry = save_question_to_redis(redis_client, keys['question'], question, answer)
+    save_question_to_redis(redis_client, keys['question'], question, answer)
     keyboard = create_keyboard()
     send_message(vk, user_id, f"❓ {question}", keyboard)
-    new_state = set_user_state(redis_client, keys['state'], States.ANSWERING)
+    set_user_state(redis_client, keys['state'], States.ANSWERING)
 
 
-def handle_solution_attempt(vk, user_id, message, redis_client):
-    keys = get_redis_keys(user_id)
-    
+def handle_solution_attempt(vk, user_id, message, redis_client, keys):
     question_data = get_current_question(redis_client, keys['question'])
     correct_answer = question_data['answer']
     
     is_correct = check_answer(message, correct_answer)
+    keyboard = create_keyboard()
     
     if is_correct:
         current_score = get_user_score(redis_client, keys['score'])
-        new_score = increment_user_score(redis_client, keys['score'], current_score)
-        keyboard = create_keyboard()
+        increment_user_score(redis_client, keys['score'], current_score)
         send_message(vk, user_id, "Правильно! Поздравляю! Для следующего вопроса нажми «Новый вопрос»", keyboard)
         redis_client.delete(keys['question'])
-        new_state = set_user_state(redis_client, keys['state'], States.CHOOSING)
+        set_user_state(redis_client, keys['state'], States.CHOOSING)
     else:
-        keyboard = create_keyboard()
         send_message(vk, user_id, "Неправильно… Попробуешь ещё раз?", keyboard)
 
 
-def handle_give_up(vk, user_id, redis_client, questions_dict):
-    keys = get_redis_keys(user_id)
-    
+def handle_give_up(vk, user_id, redis_client, questions_dict, keys):
     question_data = get_current_question(redis_client, keys['question'])
     answer = question_data['answer']
     clean_answer_text = clean_answer(answer)
@@ -82,14 +74,13 @@ def handle_give_up(vk, user_id, redis_client, questions_dict):
     send_message(vk, user_id, f"✅ Правильный ответ: {clean_answer_text}", keyboard)
     
     question, answer = get_random_question(questions_dict)
-    question_entry = save_question_to_redis(redis_client, keys['question'], question, answer)
+    save_question_to_redis(redis_client, keys['question'], question, answer)
     keyboard = create_keyboard()
     send_message(vk, user_id, f"❓ {question}", keyboard)
-    new_state = set_user_state(redis_client, keys['state'], States.ANSWERING)
+    set_user_state(redis_client, keys['state'], States.ANSWERING)
 
 
-def handle_score(vk, user_id, redis_client):
-    keys = get_redis_keys(user_id)
+def handle_score(vk, user_id, redis_client, keys):
     current_score = get_user_score(redis_client, keys['score'])
     keyboard = create_keyboard()
     send_message(vk, user_id, f"📊 Ваш счет: {current_score} правильных ответов", keyboard)
@@ -100,31 +91,31 @@ def handle_user_message(vk, user_id, message, redis_client, questions_dict):
     user_state = get_user_state(redis_client, keys['state'])
     
     if message.lower() in ['привет', 'hello', 'hi', 'start']:
-        handle_start(vk, user_id, redis_client)
+        handle_start(vk, user_id, redis_client, keys)
         return
     
     if user_state != States.CHOOSING and user_state != States.ANSWERING:
-        handle_start(vk, user_id, redis_client)
+        handle_start(vk, user_id, redis_client, keys)
         return
     
     if message == '📊 Мой счет':
-        handle_score(vk, user_id, redis_client)
+        handle_score(vk, user_id, redis_client, keys)
         return
     
     if message == '🆕 Новый вопрос':
-        handle_new_question(vk, user_id, redis_client, questions_dict)
+        handle_new_question(vk, user_id, redis_client, questions_dict, keys)
         return
     
     if user_state == States.CHOOSING:
-        handle_start(vk, user_id, redis_client)
+        handle_start(vk, user_id, redis_client, keys)
         return
     
     if user_state == States.ANSWERING and message == '🏳️ Сдаться':
-        handle_give_up(vk, user_id, redis_client, questions_dict)
+        handle_give_up(vk, user_id, redis_client, questions_dict, keys)
         return
     
     if user_state == States.ANSWERING:
-        handle_solution_attempt(vk, user_id, message, redis_client)
+        handle_solution_attempt(vk, user_id, message, redis_client, keys)
         return
 
 
