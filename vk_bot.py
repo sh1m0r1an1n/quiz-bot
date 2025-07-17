@@ -90,6 +90,38 @@ def handle_score(vk, user_id, redis_client):
     send_message(vk, user_id, f"📊 Ваш счет: {current_score} правильных ответов", keyboard)
 
 
+def handle_user_message(vk, user_id, message, redis_client, questions_dict):
+    user_state = get_user_state(redis_client, user_id)
+    
+    if message.lower() in ['привет', 'hello', 'hi', 'start']:
+        handle_start(vk, user_id, redis_client)
+        return
+    
+    if user_state != States.CHOOSING and user_state != States.ANSWERING:
+        handle_start(vk, user_id, redis_client)
+        return
+    
+    if message == '📊 Мой счет':
+        handle_score(vk, user_id, redis_client)
+        return
+    
+    if message == '🆕 Новый вопрос':
+        handle_new_question(vk, user_id, redis_client, questions_dict)
+        return
+    
+    if user_state == States.CHOOSING:
+        handle_start(vk, user_id, redis_client)
+        return
+    
+    if user_state == States.ANSWERING and message == '🏳️ Сдаться':
+        handle_give_up(vk, user_id, redis_client, questions_dict)
+        return
+    
+    if user_state == States.ANSWERING:
+        handle_solution_attempt(vk, user_id, message, redis_client)
+        return
+
+
 def main():
     load_dotenv()
     
@@ -114,24 +146,7 @@ def main():
                     
                     user_state = get_user_state(redis_client, user_id)
                     
-                    if message.lower() in ['привет', 'hello', 'hi', 'start']:
-                        handle_start(vk, user_id, redis_client)
-                    elif user_state == States.CHOOSING:
-                        if message == '🆕 Новый вопрос':
-                            handle_new_question(vk, user_id, redis_client, questions_dict)
-                        elif message == '📊 Мой счет':
-                            handle_score(vk, user_id, redis_client)
-                        else:
-                            handle_start(vk, user_id, redis_client)
-                    elif user_state == States.ANSWERING:
-                        if message == '🏳️ Сдаться':
-                            handle_give_up(vk, user_id, redis_client, questions_dict)
-                        elif message == '📊 Мой счет':
-                            handle_score(vk, user_id, redis_client)
-                        elif message == '🆕 Новый вопрос':
-                            handle_new_question(vk, user_id, redis_client, questions_dict)
-                        else:
-                            handle_solution_attempt(vk, user_id, message, redis_client)
+                    handle_user_message(vk, user_id, message, redis_client, questions_dict)
         except Exception as e:
             time.sleep(5)
 
