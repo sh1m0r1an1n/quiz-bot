@@ -1,17 +1,14 @@
 import os
 import time
 
-from dotenv import load_dotenv
-import redis
 from telegram import KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import (CommandHandler, ConversationHandler, Filters,
                           MessageHandler, Updater)
 
-from quiz_utils import (WELCOME_MESSAGE, States, check_answer, clean_answer,
-                        get_current_question, get_random_question,
-                        get_redis_keys, get_user_score, get_user_state,
-                        increment_user_score, load_all_questions,
-                        save_question_to_redis, set_user_state)
+from quiz_utils import (WELCOME_MESSAGE, States, get_current_question,
+                        get_redis_keys, get_user_state, initialize_bot_environment,
+                        process_give_up, process_new_question, process_score_request,
+                        process_solution_attempt, set_user_state)
 
 
 def create_keyboard():
@@ -55,57 +52,41 @@ def smart_entry_handler(update, context):
 def handle_new_question_request(update, context):
     user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
-    question, answer = get_random_question(questions_dict)
-    save_question_to_redis(redis_client, keys['question'], question, answer)
+    question = process_new_question(redis_client, keys, questions_dict)
     update.message.reply_text(f"❓ {question}")
-    set_user_state(redis_client, keys['state'], States.ANSWERING)
     return States.ANSWERING
 
 
 def handle_solution_attempt(update, context):
     user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
-    question_data = get_current_question(redis_client, keys['question'])
-    correct_answer = question_data['answer']
     user_answer = update.message.text
-    
-    is_correct = check_answer(user_answer, correct_answer)
+    is_correct, new_state = process_solution_attempt(redis_client, keys, user_answer)
     
     if is_correct:
-        current_score = get_user_score(redis_client, keys['score'])
-        increment_user_score(redis_client, keys['score'], current_score)
         update.message.reply_text("Правильно! Поздравляю! Для следующего вопроса нажми «Новый вопрос»")
-        redis_client.delete(keys['question'])
-        set_user_state(redis_client, keys['state'], States.CHOOSING)
-        return States.CHOOSING
+        return new_state
     else:
         update.message.reply_text("Неправильно… Попробуешь ещё раз?")
-        return States.ANSWERING
+        return new_state
 
 
 def handle_give_up(update, context):
     user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
-    question_data = get_current_question(redis_client, keys['question'])
-    answer = question_data['answer']
+    clean_answer_text, question = process_give_up(redis_client, keys, questions_dict)
     
-    clean_answer_text = clean_answer(answer)
     update.message.reply_text(f"✅ Правильный ответ: {clean_answer_text}")
-    
-    question, answer = get_random_question(questions_dict)
-    save_question_to_redis(redis_client, keys['question'], question, answer)
     update.message.reply_text(f"❓ {question}")
-    set_user_state(redis_client, keys['state'], States.ANSWERING)
     return States.ANSWERING
 
 
 def handle_score(update, context):
     user_id, redis_client, keys, questions_dict = get_user_context(update, context)
     
-    current_score = get_user_score(redis_client, keys['score'])
+    current_score, current_state = process_score_request(redis_client, keys)
     update.message.reply_text(f"📊 Ваш счет: {current_score} правильных ответов")
     
-    current_state = get_user_state(redis_client, keys['state'])
     return current_state
 
 
@@ -134,13 +115,8 @@ def handle_fallback(update, context):
 
 
 def main():
-    load_dotenv()
     bot_token = os.environ["TG_BOT_TOKEN"]
-    redis_url = os.environ["REDIS_URL"]
-    quiz_data_path = os.environ["QUIZ_DATA_PATH"]
-    
-    redis_client = redis.from_url(redis_url, decode_responses=True)
-    questions_dict = load_all_questions(quiz_data_path)
+    redis_client, questions_dict = initialize_bot_environment()
     
     updater = Updater(token=bot_token)
     dispatcher = updater.dispatcher

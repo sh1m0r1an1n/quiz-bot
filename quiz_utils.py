@@ -1,7 +1,11 @@
-from enum import Enum
 import json
+import os
 from pathlib import Path
 import random
+from enum import Enum
+
+from dotenv import load_dotenv
+import redis
 
 
 class States(Enum):
@@ -102,4 +106,55 @@ def get_user_state(redis_client, state_key):
 
 def set_user_state(redis_client, state_key, state):
     redis_client.set(state_key, state.value)
-    return state 
+    return state
+
+
+def initialize_bot_environment():
+    load_dotenv()
+    redis_url = os.environ["REDIS_URL"]
+    quiz_data_path = os.environ["QUIZ_DATA_PATH"]
+    
+    redis_client = redis.from_url(redis_url, decode_responses=True)
+    questions_dict = load_all_questions(quiz_data_path)
+    
+    return redis_client, questions_dict
+
+
+def process_new_question(redis_client, keys, questions_dict):
+    question, answer = get_random_question(questions_dict)
+    save_question_to_redis(redis_client, keys['question'], question, answer)
+    set_user_state(redis_client, keys['state'], States.ANSWERING)
+    return question
+
+
+def process_solution_attempt(redis_client, keys, user_answer):
+    question_data = get_current_question(redis_client, keys['question'])
+    correct_answer = question_data['answer']
+    is_correct = check_answer(user_answer, correct_answer)
+    
+    if is_correct:
+        current_score = get_user_score(redis_client, keys['score'])
+        increment_user_score(redis_client, keys['score'], current_score)
+        redis_client.delete(keys['question'])
+        set_user_state(redis_client, keys['state'], States.CHOOSING)
+        return True, States.CHOOSING
+    else:
+        return False, States.ANSWERING
+
+
+def process_give_up(redis_client, keys, questions_dict):
+    question_data = get_current_question(redis_client, keys['question'])
+    answer = question_data['answer']
+    clean_answer_text = clean_answer(answer)
+    
+    question, answer = get_random_question(questions_dict)
+    save_question_to_redis(redis_client, keys['question'], question, answer)
+    set_user_state(redis_client, keys['state'], States.ANSWERING)
+    
+    return clean_answer_text, question
+
+
+def process_score_request(redis_client, keys):
+    current_score = get_user_score(redis_client, keys['score'])
+    current_state = get_user_state(redis_client, keys['state'])
+    return current_score, current_state 
