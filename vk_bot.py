@@ -90,7 +90,7 @@ def handle_score(vk, user_id, redis_client):
     send_message(vk, user_id, f"📊 Ваш счет: {current_score} правильных ответов", keyboard)
 
 
-def run_bot():
+def main():
     load_dotenv()
     
     vk_token = os.environ["VK_GROUP_TOKEN"]
@@ -105,36 +105,36 @@ def run_bot():
     
     longpoll = VkLongPoll(vk_session)
     
-    for event in longpoll.listen():
-        if event.type == VkEventType.MESSAGE_NEW and event.to_me:
-            user_id = event.user_id
-            message = event.text.strip()
-            
-            user_state = get_user_state(redis_client, user_id)
-            
-            if message.lower() in ['привет', 'hello', 'hi', 'start']:
-                handle_start(vk, user_id, redis_client)
-            elif user_state == States.CHOOSING:
-                if message == '🆕 Новый вопрос':
-                    handle_new_question(vk, user_id, redis_client, questions_dict)
-                elif message == '📊 Мой счет':
-                    handle_score(vk, user_id, redis_client)
-                else:
-                    handle_start(vk, user_id, redis_client)
-            elif user_state == States.ANSWERING:
-                if message == '🏳️ Сдаться':
-                    handle_give_up(vk, user_id, redis_client, questions_dict)
-                elif message == '📊 Мой счет':
-                    handle_score(vk, user_id, redis_client)
-                elif message == '🆕 Новый вопрос':
-                    handle_new_question(vk, user_id, redis_client, questions_dict)
-                else:
-                    handle_solution_attempt(vk, user_id, message, redis_client)
+    while True:
+        try:
+            for event in longpoll.listen():
+                if event.type == VkEventType.MESSAGE_NEW and event.to_me:
+                    user_id = event.user_id
+                    message = event.text.strip()
+                    
+                    user_state = get_user_state(redis_client, user_id)
+                    
+                    if message.lower() in ['привет', 'hello', 'hi', 'start']:
+                        handle_start(vk, user_id, redis_client)
+                    elif user_state == States.CHOOSING:
+                        if message == '🆕 Новый вопрос':
+                            handle_new_question(vk, user_id, redis_client, questions_dict)
+                        elif message == '📊 Мой счет':
+                            handle_score(vk, user_id, redis_client)
+                        else:
+                            handle_start(vk, user_id, redis_client)
+                    elif user_state == States.ANSWERING:
+                        if message == '🏳️ Сдаться':
+                            handle_give_up(vk, user_id, redis_client, questions_dict)
+                        elif message == '📊 Мой счет':
+                            handle_score(vk, user_id, redis_client)
+                        elif message == '🆕 Новый вопрос':
+                            handle_new_question(vk, user_id, redis_client, questions_dict)
+                        else:
+                            handle_solution_attempt(vk, user_id, message, redis_client)
+        except Exception as e:
+            time.sleep(5)
 
 
 if __name__ == "__main__":
-    while True:
-        try:
-            run_bot()
-        except Exception as e:
-            time.sleep(5) 
+    main() 

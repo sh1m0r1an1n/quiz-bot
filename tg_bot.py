@@ -129,7 +129,7 @@ def handle_fallback(update, context):
     return States.CHOOSING
 
 
-def run_bot():
+def main():
     load_dotenv()
     bot_token = os.environ["TG_BOT_TOKEN"]
     redis_url = os.environ["REDIS_URL"]
@@ -168,13 +168,13 @@ def run_bot():
     
     dispatcher.add_handler(conversation_handler)
     
-    updater.start_polling()
-    updater.idle()
+    while True:
+        try:
+            updater.start_polling()
+            updater.idle()
+        except Exception as e:
+            time.sleep(5)
 
 
 if __name__ == "__main__":
-    while True:
-        try:
-            run_bot()
-        except Exception as e:
-            time.sleep(5) 
+    main() 
