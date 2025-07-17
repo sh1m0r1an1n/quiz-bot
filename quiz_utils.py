@@ -55,7 +55,7 @@ def check_answer(user_answer, correct_answer):
     return user_answer == cleaned_correct
 
 
-def get_current_question_data(redis_client, user_key):
+def get_current_question(redis_client, user_key):
     stored_json = redis_client.get(user_key)
     return json.loads(stored_json)
 
@@ -87,7 +87,7 @@ def increment_user_score(redis_client, user_id):
     redis_client.set(keys['score'], current_score + 1)
 
 
-def clear_user_data(redis_client, user_id):
+def clear_user_session(redis_client, user_id):
     keys = get_redis_keys(user_id)
     redis_client.delete(keys['question'])
     redis_client.delete(keys['state'])

@@ -8,7 +8,7 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Conve
 
 from quiz_utils import (
     States, WELCOME_MESSAGE, get_random_question, clean_answer, check_answer,
-    get_current_question_data, get_redis_keys, save_question_to_redis,
+    get_current_question, get_redis_keys, save_question_to_redis,
     get_user_score, increment_user_score, get_user_state, set_user_state
 )
 
@@ -43,7 +43,7 @@ def smart_entry_handler(update, context):
     current_state = get_user_state(redis_client, user_id)
     
     if current_state == States.ANSWERING:
-        question_data = get_current_question_data(redis_client, keys['question'])
+        question_data = get_current_question(redis_client, keys['question'])
         if question_data:
             reply_markup = create_keyboard()
             update.message.reply_text(
@@ -69,7 +69,7 @@ def handle_new_question_request(update, context):
 def handle_solution_attempt(update, context):
     user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
     
-    question_data = get_current_question_data(redis_client, keys['question'])
+    question_data = get_current_question(redis_client, keys['question'])
     correct_answer = question_data['answer']
     user_answer = update.message.text
     
@@ -87,7 +87,7 @@ def handle_solution_attempt(update, context):
 def handle_give_up(update, context):
     user_id, redis_client, keys, quiz_data_path = get_user_context(update, context)
     
-    question_data = get_current_question_data(redis_client, keys['question'])
+    question_data = get_current_question(redis_client, keys['question'])
     answer = question_data['answer']
     
     clean_answer_text = clean_answer(answer)
@@ -114,7 +114,7 @@ def handle_fallback(update, context):
     current_state = get_user_state(redis_client, user_id)
     
     if current_state == States.ANSWERING:
-        question_data = get_current_question_data(redis_client, keys['question'])
+        question_data = get_current_question(redis_client, keys['question'])
         if question_data:
             reply_markup = create_keyboard()
             update.message.reply_text(

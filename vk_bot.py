@@ -10,7 +10,7 @@ from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 
 from quiz_utils import (
     States, WELCOME_MESSAGE, get_random_question, clean_answer, check_answer,
-    get_current_question_data, get_redis_keys, save_question_to_redis,
+    get_current_question, get_redis_keys, save_question_to_redis,
     get_user_score, increment_user_score, get_user_state, set_user_state
 )
 
@@ -58,7 +58,7 @@ def handle_new_question(vk, user_id, redis_client, quiz_data_path):
 def handle_solution_attempt(vk, user_id, message, redis_client):
     keys = get_redis_keys(user_id)
     
-    question_data = get_current_question_data(redis_client, keys['question'])
+    question_data = get_current_question(redis_client, keys['question'])
     correct_answer = question_data['answer']
     
     if check_answer(message, correct_answer):
@@ -75,7 +75,7 @@ def handle_solution_attempt(vk, user_id, message, redis_client):
 def handle_give_up(vk, user_id, redis_client, quiz_data_path):
     keys = get_redis_keys(user_id)
     
-    question_data = get_current_question_data(redis_client, keys['question'])
+    question_data = get_current_question(redis_client, keys['question'])
     answer = question_data['answer']
     clean_answer_text = clean_answer(answer)
     keyboard = create_keyboard()
