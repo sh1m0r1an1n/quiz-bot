@@ -2,12 +2,14 @@ import os
 import random
 import time
 
+from dotenv import load_dotenv
+import redis
 import vk_api
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.longpoll import VkEventType, VkLongPoll
 
 from quiz_utils import WELCOME_MESSAGE, States
-from quiz_utils import initialize_bot_environment, get_redis_keys
+from quiz_utils import get_redis_keys, load_all_questions
 from quiz_utils import get_user_state, set_user_state
 from quiz_utils import (process_give_up, process_new_question, 
                         process_score_request, process_solution_attempt)
@@ -102,8 +104,13 @@ def handle_user_message(vk, user_id, message, redis_client, questions):
 
 
 def main():
+    load_dotenv()
     vk_token = os.environ["VK_GROUP_TOKEN"]
-    redis_client, questions = initialize_bot_environment()
+    redis_url = os.environ["REDIS_URL"]
+    quiz_data_path = os.environ["QUIZ_DATA_PATH"]
+    
+    redis_client = redis.from_url(redis_url, decode_responses=True)
+    questions = load_all_questions(quiz_data_path)
     
     vk_session = vk_api.VkApi(token=vk_token)
     vk = vk_session.get_api()

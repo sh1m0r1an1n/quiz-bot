@@ -4,9 +4,6 @@ from pathlib import Path
 import random
 from enum import Enum
 
-from dotenv import load_dotenv
-import redis
-
 
 class States(Enum):
     CHOOSING = 1
@@ -109,15 +106,7 @@ def set_user_state(redis_client, state_key, state):
     return state
 
 
-def initialize_bot_environment():
-    load_dotenv()
-    redis_url = os.environ["REDIS_URL"]
-    quiz_data_path = os.environ["QUIZ_DATA_PATH"]
-    
-    redis_client = redis.from_url(redis_url, decode_responses=True)
-    questions = load_all_questions(quiz_data_path)
-    
-    return redis_client, questions
+
 
 
 def process_new_question(redis_client, keys, questions):
