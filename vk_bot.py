@@ -6,9 +6,11 @@ import vk_api
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.longpoll import VkEventType, VkLongPoll
 
-from quiz_utils import (WELCOME_MESSAGE, States, get_redis_keys, get_user_state,
-                        initialize_bot_environment, process_give_up, process_new_question,
-                        process_score_request, process_solution_attempt, set_user_state)
+from quiz_utils import WELCOME_MESSAGE, States
+from quiz_utils import initialize_bot_environment, get_redis_keys
+from quiz_utils import get_user_state, set_user_state
+from quiz_utils import (process_give_up, process_new_question, 
+                        process_score_request, process_solution_attempt)
 
 
 def create_keyboard():
