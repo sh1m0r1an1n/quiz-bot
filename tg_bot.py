@@ -23,13 +23,13 @@ def get_user_context(update, context):
     user_id = update.effective_user.id
     redis_client = context.bot_data['redis_client']
     keys = get_redis_keys(user_id)
-    questions_dict = context.bot_data['questions_dict']
+    questions = context.bot_data['questions']
     
-    return user_id, redis_client, keys, questions_dict
+    return user_id, redis_client, keys, questions
 
 
 def smart_entry_handler(update, context):
-    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
+    user_id, redis_client, keys, questions = get_user_context(update, context)
     
     current_state = get_user_state(redis_client, keys['state'])
     
@@ -50,15 +50,15 @@ def smart_entry_handler(update, context):
 
 
 def handle_new_question_request(update, context):
-    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
+    user_id, redis_client, keys, questions = get_user_context(update, context)
     
-    question = process_new_question(redis_client, keys, questions_dict)
+    question = process_new_question(redis_client, keys, questions)
     update.message.reply_text(f"❓ {question}")
     return States.ANSWERING
 
 
 def handle_solution_attempt(update, context):
-    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
+    user_id, redis_client, keys, questions = get_user_context(update, context)
     
     user_answer = update.message.text
     is_correct, new_state = process_solution_attempt(redis_client, keys, user_answer)
@@ -72,9 +72,9 @@ def handle_solution_attempt(update, context):
 
 
 def handle_give_up(update, context):
-    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
+    user_id, redis_client, keys, questions = get_user_context(update, context)
     
-    clean_answer_text, question = process_give_up(redis_client, keys, questions_dict)
+    clean_answer_text, question = process_give_up(redis_client, keys, questions)
     
     update.message.reply_text(f"✅ Правильный ответ: {clean_answer_text}")
     update.message.reply_text(f"❓ {question}")
@@ -82,7 +82,7 @@ def handle_give_up(update, context):
 
 
 def handle_score(update, context):
-    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
+    user_id, redis_client, keys, questions = get_user_context(update, context)
     
     current_score, current_state = process_score_request(redis_client, keys)
     update.message.reply_text(f"📊 Ваш счет: {current_score} правильных ответов")
@@ -91,7 +91,7 @@ def handle_score(update, context):
 
 
 def handle_fallback(update, context):
-    user_id, redis_client, keys, questions_dict = get_user_context(update, context)
+    user_id, redis_client, keys, questions = get_user_context(update, context)
     
     current_state = get_user_state(redis_client, keys['state'])
     
@@ -116,13 +116,13 @@ def handle_fallback(update, context):
 
 def main():
     bot_token = os.environ["TG_BOT_TOKEN"]
-    redis_client, questions_dict = initialize_bot_environment()
+    redis_client, questions = initialize_bot_environment()
     
     updater = Updater(token=bot_token)
     dispatcher = updater.dispatcher
     
     dispatcher.bot_data['redis_client'] = redis_client
-    dispatcher.bot_data['questions_dict'] = questions_dict
+    dispatcher.bot_data['questions'] = questions
     
     conversation_handler = ConversationHandler(
         entry_points=[

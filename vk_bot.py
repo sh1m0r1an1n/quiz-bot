@@ -37,8 +37,8 @@ def handle_start(vk, user_id, redis_client, keys):
     set_user_state(redis_client, keys['state'], States.CHOOSING)
 
 
-def handle_new_question(vk, user_id, redis_client, questions_dict, keys):
-    question = process_new_question(redis_client, keys, questions_dict)
+def handle_new_question(vk, user_id, redis_client, questions, keys):
+    question = process_new_question(redis_client, keys, questions)
     keyboard = create_keyboard()
     send_message(vk, user_id, f"❓ {question}", keyboard)
 
@@ -53,8 +53,8 @@ def handle_solution_attempt(vk, user_id, message, redis_client, keys):
         send_message(vk, user_id, "Неправильно… Попробуешь ещё раз?", keyboard)
 
 
-def handle_give_up(vk, user_id, redis_client, questions_dict, keys):
-    clean_answer_text, question = process_give_up(redis_client, keys, questions_dict)
+def handle_give_up(vk, user_id, redis_client, questions, keys):
+    clean_answer_text, question = process_give_up(redis_client, keys, questions)
     keyboard = create_keyboard()
     send_message(vk, user_id, f"✅ Правильный ответ: {clean_answer_text}", keyboard)
     send_message(vk, user_id, f"❓ {question}", keyboard)
@@ -66,7 +66,7 @@ def handle_score(vk, user_id, redis_client, keys):
     send_message(vk, user_id, f"📊 Ваш счет: {current_score} правильных ответов", keyboard)
 
 
-def handle_user_message(vk, user_id, message, redis_client, questions_dict):
+def handle_user_message(vk, user_id, message, redis_client, questions):
     keys = get_redis_keys(user_id)
     user_state = get_user_state(redis_client, keys['state'])
     
@@ -83,7 +83,7 @@ def handle_user_message(vk, user_id, message, redis_client, questions_dict):
         return
     
     if message == '🆕 Новый вопрос':
-        handle_new_question(vk, user_id, redis_client, questions_dict, keys)
+        handle_new_question(vk, user_id, redis_client, questions, keys)
         return
     
     if user_state == States.CHOOSING:
@@ -91,7 +91,7 @@ def handle_user_message(vk, user_id, message, redis_client, questions_dict):
         return
     
     if user_state == States.ANSWERING and message == '🏳️ Сдаться':
-        handle_give_up(vk, user_id, redis_client, questions_dict, keys)
+        handle_give_up(vk, user_id, redis_client, questions, keys)
         return
     
     if user_state == States.ANSWERING:
@@ -101,7 +101,7 @@ def handle_user_message(vk, user_id, message, redis_client, questions_dict):
 
 def main():
     vk_token = os.environ["VK_GROUP_TOKEN"]
-    redis_client, questions_dict = initialize_bot_environment()
+    redis_client, questions = initialize_bot_environment()
     
     vk_session = vk_api.VkApi(token=vk_token)
     vk = vk_session.get_api()
@@ -115,7 +115,7 @@ def main():
                     user_id = event.user_id
                     message = event.text.strip()
                     
-                    handle_user_message(vk, user_id, message, redis_client, questions_dict)
+                    handle_user_message(vk, user_id, message, redis_client, questions)
         except Exception as e:
             time.sleep(5)
 

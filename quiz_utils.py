@@ -39,9 +39,9 @@ def load_all_questions(quiz_directory_path):
     return all_questions
 
 
-def get_random_question(questions_dict):
-    random_question = random.choice(list(questions_dict.keys()))
-    answer = questions_dict[random_question]
+def get_random_question(questions):
+    random_question = random.choice(list(questions.keys()))
+    answer = questions[random_question]
     
     return random_question, answer
 
@@ -115,13 +115,13 @@ def initialize_bot_environment():
     quiz_data_path = os.environ["QUIZ_DATA_PATH"]
     
     redis_client = redis.from_url(redis_url, decode_responses=True)
-    questions_dict = load_all_questions(quiz_data_path)
+    questions = load_all_questions(quiz_data_path)
     
-    return redis_client, questions_dict
+    return redis_client, questions
 
 
-def process_new_question(redis_client, keys, questions_dict):
-    question, answer = get_random_question(questions_dict)
+def process_new_question(redis_client, keys, questions):
+    question, answer = get_random_question(questions)
     save_question_to_redis(redis_client, keys['question'], question, answer)
     set_user_state(redis_client, keys['state'], States.ANSWERING)
     return question
@@ -142,12 +142,12 @@ def process_solution_attempt(redis_client, keys, user_answer):
         return False, States.ANSWERING
 
 
-def process_give_up(redis_client, keys, questions_dict):
+def process_give_up(redis_client, keys, questions):
     question_data = get_current_question(redis_client, keys['question'])
     answer = question_data['answer']
     clean_answer_text = clean_answer(answer)
     
-    question, answer = get_random_question(questions_dict)
+    question, answer = get_random_question(questions)
     save_question_to_redis(redis_client, keys['question'], question, answer)
     set_user_state(redis_client, keys['state'], States.ANSWERING)
     
